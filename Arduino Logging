@@ -11,14 +11,14 @@ int status = WL_IDLE_STATUS;      // the Wifi radio's status
 
 boolean lastConnected = false;  
 char server[] = "api.pushingbox.com";
-WiFiClient pushBox;
+WiFiClient client;
 
 //=====================================
 //==        Pushing Box Vars         ==
 //=====================================
-char DEVICE_ID[] = "vAC6D49B0BFD4E04";
-char SS_ID[]     = "1KgUFKWi7batrsnqMCFQPIbGVP572ygZphVrBHE1vIE0";
-char TAB_ID[]    = "sheet1";
+char DEVICE_ID[] = "vAC6D49B0BFD4E04";                                //Provided by the pushingbox api
+char SS_ID[]     = "1KgUFKWi7batrsnqMCFQPIbGVP572ygZphVrBHE1vIE0";    //Unique id of google spreadsheet
+char TAB_ID[]    = "sheet1";      
 
 boolean DEBUG    = true;
 
@@ -39,10 +39,12 @@ boolean stat3 = false;
 
 int repCounter = 0;
 
-uint32_t t1 = 0;
-uint32_t t2 = 0;
+long t1 = 0;
+long t2 = 0;
 
-const uint32_t TIMEOUT = 480000;
+long duration = 0;
+
+const long TIMEOUT = 300000;
 
 //--------------------------------------------------------------------------
 
@@ -58,9 +60,9 @@ void setup() {
   pinMode(ldrPin2,INPUT);
   pinMode(ldrPin3,INPUT);
   
-  //===========================================
-  //==   Wifi Code (From WiFiNina Example)   ==
-  //===========================================
+  //====================================================
+  //==   Wifi Code (Straight From WiFiNina Example)   ==
+  //====================================================
   Serial.begin(9600);
   while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
@@ -90,8 +92,6 @@ void setup() {
     // wait 10 seconds for connection:
     delay(10000);
   }
-
-  server.begin();
 
   if (DEBUG) {
     Serial.print("You're connected to the network");
@@ -131,22 +131,29 @@ void loop() {
   else {digitalWrite(ledPin3, LOW);
   }
 
+  if (repCounter > 0) {t2 = millis;}
+
   if (stat1 == true && stat2 == true && stat3 == true ){
     repCounter +=1; 
     stat1 = false;
     stat2 = false;
     stat3 = false;
 
-    if (t1 == 0) {t1 = millis();} 
-    else {t2 = millis();}
-
-    //=====================================
-    //==        Upload Interval          ==
-    //=====================================
-    if ((t2 - t1) > TIMEOUT && repCounter > 0) {
-      sendToPushingBox();
-      t1 = 0; t2 = 0;
+    if (repCounter > 0) {
+      duration += (t2 - t1);
     }
+
+    t1 = millis();
+  }
+
+  //=====================================
+  //==        Upload Interval          ==
+  //=====================================
+  //Data sent once 8 minutes have passed from the last recorded "rep."
+  if (repCounter > 0 && (t2 - t1) > TIMEOUT) {
+    sendToPushingBox();
+    repCounter = 0;
+    duration = 0;
   }
 
   //=====================================
@@ -154,19 +161,19 @@ void loop() {
   //=====================================
   // This writes a response from the PushingBox Server.
   // You should see a "200 OK"
-  if (pushBox.available()) {
-    char c = pushBox.read();
+  if (client.available()) {
+    char c = client.read();
     if(DEBUG){Serial.print(c);}
   }
  
   // if there's no net connection, but there was one last time
   // through the loop, then stop the client:
-  if (!pushBox.connected() && lastConnected) {
+  if (!client.connected() && lastConnected) {
     if(DEBUG){Serial.println();}
     if(DEBUG){Serial.println("disconnecting.");}
-    pushBox.stop();
+    client.stop();
   }
-  lastConnected = pushBox.connected();
+  lastConnected = client.connected();
 }
 
 //--------------------------------------------------------------------------
@@ -176,9 +183,9 @@ void loop() {
 //=====================================
 //Function for sending the request to PushingBox
 void sendToPushingBox(){
-  pushBox.stop(); 
+  client.stop(); 
   if(DEBUG){Serial.println("Connecting...");}
-  if(pushBox.connect(server, 80)) { 
+  if(client.connect(server, 80)) { 
     if(DEBUG){Serial.println("Connected");}
     if(DEBUG){Serial.println("Sending Request");}
 
@@ -188,14 +195,14 @@ void sendToPushingBox(){
     SS_ID,         // Spreadsheet ID
     TAB_ID);       // Tab or Sheet Selected
 
-double duration = 1; 
+    duration /= (60 * 1000); //Convert from milliseconds to minutes
 
     char msg[1024];
     sprintf(msg, "Reps~%d~Duration_(Mins)~%d", repCounter, duration);
 
-    pushBox.print(head);
-    pushBox.print(msg);
-    pushBox.println(" HTTP/1.1\nHost: api.pushingbox.com\nUser-Agent: Arduino\n");
+    client.print(head);
+    client.print(msg);
+    client.println(" HTTP/1.1\nHost: api.pushingbox.com\nUser-Agent: Arduino\n");
 
     if(DEBUG) {
       Serial.print(head);
@@ -223,4 +230,4 @@ void printWifiStatus() {
   Serial.print("signal strength (RSSI):");
   Serial.print(rssi);
   Serial.println(" dBm");
-}  
+}
