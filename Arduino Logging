@@ -1,0 +1,226 @@
+#include <SPI.h>
+#include <WiFiNINA.h>
+#include "arduino_secrets.h" 
+
+//=====================================
+//==        WiFI Vars                ==
+//=====================================
+char ssid[] = SECRET_SSID;        // your network SSID (name)
+char pass[] = SECRET_PASS;        // your network password (use for WPA, or use as key for WEP)
+int status = WL_IDLE_STATUS;      // the Wifi radio's status
+
+boolean lastConnected = false;  
+char server[] = "api.pushingbox.com";
+WiFiClient pushBox;
+
+//=====================================
+//==        Pushing Box Vars         ==
+//=====================================
+char DEVICE_ID[] = "vAC6D49B0BFD4E04";
+char SS_ID[]     = "1KgUFKWi7batrsnqMCFQPIbGVP572ygZphVrBHE1vIE0";
+char TAB_ID[]    = "sheet1";
+
+boolean DEBUG    = true;
+
+//=====================================
+//==        Data Vars                ==
+//=====================================
+const int ldrPin1 = A0;
+const int ldrPin2 = A1;
+const int ldrPin3 = A2;
+
+const int ledPin1 = 8;
+const int ledPin2 = 9;
+const int ledPin3 = 10;
+
+boolean stat1 = true;
+boolean stat2 = false;
+boolean stat3 = false;
+
+int repCounter = 0;
+
+uint32_t t1 = 0;
+uint32_t t2 = 0;
+
+const uint32_t TIMEOUT = 480000;
+
+//--------------------------------------------------------------------------
+
+void setup() {
+  //=====================================
+  //==        Data Setup               ==
+  //=====================================
+  pinMode(ledPin1, OUTPUT);
+  pinMode(ledPin2, OUTPUT);
+  pinMode(ledPin3, OUTPUT);
+
+  pinMode(ldrPin1,INPUT);
+  pinMode(ldrPin2,INPUT);
+  pinMode(ldrPin3,INPUT);
+  
+  //===========================================
+  //==   Wifi Code (From WiFiNina Example)   ==
+  //===========================================
+  Serial.begin(9600);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+  // check for the WiFi module:
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println("Communication with WiFi module failed!");
+    // don't continue
+    while (true);
+  }
+
+  String fv = WiFi.firmwareVersion();
+  if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
+    Serial.println("Please upgrade the firmware");
+  }
+
+  // attempt to connect to Wifi network:
+  while (status != WL_CONNECTED) {
+    if (DEBUG){
+      Serial.print("Attempting to connect to WPA SSID: ");
+      Serial.println(ssid);
+    }
+    // Connect to WPA/WPA2 network:
+    status = WiFi.begin(ssid, pass);
+
+    // wait 10 seconds for connection:
+    delay(10000);
+  }
+
+  server.begin();
+
+  if (DEBUG) {
+    Serial.print("You're connected to the network");
+    printWifiStatus();
+  }
+}
+
+//--------------------------------------------------------------------------
+
+void loop() {  
+  //=====================================
+  //==        Data Collection          ==
+  //=====================================
+  int ldrStatus1 = analogRead(ldrPin1);
+  int ldrStatus2 = analogRead(ldrPin2);
+  int ldrStatus3 = analogRead(ldrPin3);
+
+  if (ldrStatus1 <= 200) {
+    digitalWrite(ledPin1, HIGH);
+    stat1 = true;
+    delay(1000);
+  } else {
+    digitalWrite(ledPin1, LOW);
+  }
+  if (ldrStatus2 <= 200) {
+    digitalWrite(ledPin2, HIGH);
+    stat2 = true;
+    delay(1000);
+  } 
+  else {
+    digitalWrite(ledPin2, LOW);
+  } if (ldrStatus3 <= 200) {
+    digitalWrite(ledPin3, HIGH);
+    stat3 = true;
+    delay(1000);
+  } 
+  else {digitalWrite(ledPin3, LOW);
+  }
+
+  if (stat1 == true && stat2 == true && stat3 == true ){
+    repCounter +=1; 
+    stat1 = false;
+    stat2 = false;
+    stat3 = false;
+
+    if (t1 == 0) {t1 = millis();} 
+    else {t2 = millis();}
+
+    //=====================================
+    //==        Upload Interval          ==
+    //=====================================
+    if ((t2 - t1) > TIMEOUT && repCounter > 0) {
+      sendToPushingBox();
+      t1 = 0; t2 = 0;
+    }
+  }
+
+  //=====================================
+  //==        Debug                    ==
+  //=====================================
+  // This writes a response from the PushingBox Server.
+  // You should see a "200 OK"
+  if (pushBox.available()) {
+    char c = pushBox.read();
+    if(DEBUG){Serial.print(c);}
+  }
+ 
+  // if there's no net connection, but there was one last time
+  // through the loop, then stop the client:
+  if (!pushBox.connected() && lastConnected) {
+    if(DEBUG){Serial.println();}
+    if(DEBUG){Serial.println("disconnecting.");}
+    pushBox.stop();
+  }
+  lastConnected = pushBox.connected();
+}
+
+//--------------------------------------------------------------------------
+
+//=====================================
+//==        Send Data                ==
+//=====================================
+//Function for sending the request to PushingBox
+void sendToPushingBox(){
+  pushBox.stop(); 
+  if(DEBUG){Serial.println("Connecting...");}
+  if(pushBox.connect(server, 80)) { 
+    if(DEBUG){Serial.println("Connected");}
+    if(DEBUG){Serial.println("Sending Request");}
+
+    char head[1024];
+    sprintf(head, "GET /pushingbox?devid=%s&key0=sheetID&val0=%s&key1=tabID&val1=%s&key2=full_data&val2=", 
+    DEVICE_ID,     // PushingBox Device ID
+    SS_ID,         // Spreadsheet ID
+    TAB_ID);       // Tab or Sheet Selected
+
+double duration = 1; 
+
+    char msg[1024];
+    sprintf(msg, "Reps~%d~Duration_(Mins)~%d", repCounter, duration);
+
+    pushBox.print(head);
+    pushBox.print(msg);
+    pushBox.println(" HTTP/1.1\nHost: api.pushingbox.com\nUser-Agent: Arduino\n");
+
+    if(DEBUG) {
+      Serial.print(head);
+      Serial.print(msg);
+      Serial.println(" HTTP/1.1\nHost: api.pushingbox.com\nUser-Agent: Arduino\n");
+    }
+  } else { if(DEBUG){Serial.println("connection failed");}} 
+}
+
+//=====================================
+//==        Wifi Debug               ==
+//=====================================
+void printWifiStatus() {
+  // print the SSID of the network you're attached to:
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
+
+  // print your board's IP address:
+  IPAddress ip = WiFi.localIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+
+  // print the received signal strength:
+  long rssi = WiFi.RSSI();
+  Serial.print("signal strength (RSSI):");
+  Serial.print(rssi);
+  Serial.println(" dBm");
+}  
