@@ -16,9 +16,11 @@ WiFiClient client;
 //=====================================
 //==        Pushing Box Vars         ==
 //=====================================
-char DEVICE_ID[] = "vAC6D49B0BFD4E04";                                //Provided by the pushingbox api
-char SS_ID[]     = "1KgUFKWi7batrsnqMCFQPIbGVP572ygZphVrBHE1vIE0";    //Unique id of google spreadsheet
-char TAB_ID[]    = "sheet1";      
+char DEVICE_ID_UPLOAD[] = UPLOAD_ID;    //Provided by the pushingbox api
+char SS_ID[]     = SPREADSHEET_ID;               //Unique id of google spreadsheet
+char TAB_ID[]    = PAGE_ID;              //Determines tab where data is uploaded
+
+char DEVICE_ID_MAIL[] = MAIL_ID;        //Provided by the pushingbox api
 
 boolean DEBUG    = true;
 
@@ -39,8 +41,8 @@ boolean stat3 = false;
 
 int repCounter = 0;
 
-long t1 = 0;
-long t2 = 0;
+unsigned long t1 = 0;
+unsigned long t2 = 0;
 
 long duration = 0;
 
@@ -97,6 +99,12 @@ void setup() {
     Serial.print("You're connected to the network");
     printWifiStatus();
   }
+
+  //=====================================
+  //==        Notification             ==
+  //=====================================
+  notifyPushingBox();
+  
 }
 
 //--------------------------------------------------------------------------
@@ -131,7 +139,7 @@ void loop() {
   else {digitalWrite(ledPin3, LOW);
   }
 
-  if (repCounter > 0) {t2 = millis;}
+  if (repCounter > 0) {t2 = millis();}
 
   if (stat1 == true && stat2 == true && stat3 == true ){
     repCounter +=1; 
@@ -191,11 +199,11 @@ void sendToPushingBox(){
 
     char head[1024];
     sprintf(head, "GET /pushingbox?devid=%s&key0=sheetID&val0=%s&key1=tabID&val1=%s&key2=full_data&val2=", 
-    DEVICE_ID,     // PushingBox Device ID
+    DEVICE_ID_UPLOAD,     // PushingBox Device ID
     SS_ID,         // Spreadsheet ID
     TAB_ID);       // Tab or Sheet Selected
 
-    duration /= (60 * 1000); //Convert from milliseconds to minutes
+    duration /= (60000); //Converts elapsed duration to minutes
 
     char msg[1024];
     sprintf(msg, "Reps~%d~Duration_(Mins)~%d", repCounter, duration);
@@ -210,6 +218,30 @@ void sendToPushingBox(){
       Serial.println(" HTTP/1.1\nHost: api.pushingbox.com\nUser-Agent: Arduino\n");
     }
   } else { if(DEBUG){Serial.println("connection failed");}} 
+}
+
+//=====================================
+//==        Notify                   ==
+//=====================================
+void notifyPushingBox(){
+  client.stop(); 
+  if(DEBUG){Serial.println("Connecting...");}
+  if(client.connect(server, 80)) { 
+    if(DEBUG){Serial.println("Connected");}
+    if(DEBUG){Serial.println("Sending Request");}
+
+    char head[1024];
+    sprintf(head, "GET /pushingbox?devid=%s", 
+    DEVICE_ID_MAIL);     // PushingBox Device ID
+    
+    client.print(head);
+    client.println(" HTTP/1.1\nHost: api.pushingbox.com\nUser-Agent: Arduino\n");
+
+    if(DEBUG) {
+      Serial.print(head);
+      Serial.println(" HTTP/1.1\nHost: api.pushingbox.com\nUser-Agent: Arduino\n");
+    }
+  } else { if(DEBUG){Serial.println("connection failed");}}   
 }
 
 //=====================================
